@@ -14,7 +14,7 @@ class NetWorthSnapshotAdmin(admin.ModelAdmin):
     list_filter = ['currency', 'snapshot_date', 'created_at']
     search_fields = ['user__username', 'household__name']
     ordering = ['-snapshot_date']
-    readonly_fields = ['created_at', 'debt_to_asset_ratio']
+    readonly_fields = ['created_at', 'debt_to_asset_ratio', 'total_assets', 'total_liabilities', 'net_worth', 'currency', 'snapshot_date']
     date_hierarchy = 'snapshot_date'
 
     fieldsets = (
@@ -50,5 +50,28 @@ class NetWorthSnapshotAdmin(admin.ModelAdmin):
     debt_to_asset_ratio.short_description = 'Debt/Asset Ratio'
 
     def get_queryset(self, request):
-        """Optimize query with select_related."""
-        return super().get_queryset(request).select_related('user', 'household', 'currency')
+        """Filter queryset for non-superusers to only show their own snapshots."""
+        qs = super().get_queryset(request).select_related('user', 'household', 'currency')
+        if not request.user.is_superuser:
+            # Show snapshots where user is the owner or part of the household
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(user=request.user) |
+                Q(household__members__user=request.user)
+            ).distinct()
+        return qs
+
+    def get_form(self, request, obj=None, **kwargs):
+        """Customize form for non-superusers."""
+        form = super().get_form(request, obj, **kwargs)
+        if not request.user.is_superuser:
+            # Limit user field to current user only
+            if 'user' in form.base_fields:
+                form.base_fields['user'].queryset = form.base_fields['user'].queryset.filter(id=request.user.id)
+                form.base_fields['user'].initial = request.user
+            # Limit household to ones user is part of
+            if 'household' in form.base_fields:
+                form.base_fields['household'].queryset = form.base_fields['household'].queryset.filter(
+                    members__user=request.user
+                )
+        return form

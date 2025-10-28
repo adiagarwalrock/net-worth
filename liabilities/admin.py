@@ -57,8 +57,26 @@ class LiabilityAdmin(admin.ModelAdmin):
     )
 
     def get_queryset(self, request):
-        """Optimize query with select_related."""
-        return super().get_queryset(request).select_related('user', 'currency')
+        """Filter queryset for non-superusers to only show their own liabilities."""
+        qs = super().get_queryset(request).select_related('user', 'currency')
+        if not request.user.is_superuser:
+            qs = qs.filter(user=request.user)
+        return qs
+
+    def get_form(self, request, obj=None, **kwargs):
+        """Customize form to hide user field for non-superusers."""
+        form = super().get_form(request, obj, **kwargs)
+        if not request.user.is_superuser:
+            # Hide user field for non-superusers
+            if 'user' in form.base_fields:
+                form.base_fields['user'].widget = admin.widgets.HiddenInput()
+        return form
+
+    def save_model(self, request, obj, form, change):
+        """Auto-set user to current logged-in user for non-superusers."""
+        if not request.user.is_superuser:
+            obj.user = request.user
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(LiabilityHistory)

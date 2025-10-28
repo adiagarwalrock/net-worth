@@ -45,6 +45,28 @@ class HouseholdAdmin(admin.ModelAdmin):
         return obj.get_members_count()
     get_members_count.short_description = 'Members Count'
 
+    def get_queryset(self, request):
+        """Filter queryset for non-superusers to only show households they're part of."""
+        qs = super().get_queryset(request)
+        if not request.user.is_superuser:
+            qs = qs.filter(members__user=request.user).distinct()
+        return qs
+
+    def get_form(self, request, obj=None, **kwargs):
+        """Customize form to set created_by for non-superusers."""
+        form = super().get_form(request, obj, **kwargs)
+        if not request.user.is_superuser:
+            if 'created_by' in form.base_fields:
+                form.base_fields['created_by'].widget = admin.widgets.HiddenInput()
+                form.base_fields['created_by'].initial = request.user
+        return form
+
+    def save_model(self, request, obj, form, change):
+        """Auto-set created_by to current logged-in user for non-superusers."""
+        if not request.user.is_superuser and not obj.pk:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
+
 
 @admin.register(HouseholdMember)
 class HouseholdMemberAdmin(admin.ModelAdmin):
