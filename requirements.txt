@@ -8,7 +8,7 @@ click-didyoumean==0.3.1
 click-plugins==1.1.1.2
 click-repl==0.3.0
 cron_descriptor==2.0.6
-Django==5.2.7
+Django==5.2.8
 django-celery-beat==2.8.1
 django-timezone-field==7.1
 google-generativeai>=0.3.0
