@@ -110,6 +110,8 @@ class StatementUpload(models.Model):
         indexes = [
             models.Index(fields=['user', '-uploaded_at']),
             models.Index(fields=['status', '-uploaded_at']),
+            models.Index(fields=['upload_type', '-uploaded_at'], name='statement_upload_type_idx'),
+            models.Index(fields=['user', 'status'], name='statement_user_status_idx'),
         ]
 
     def __str__(self):

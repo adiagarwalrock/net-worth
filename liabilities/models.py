@@ -6,6 +6,8 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
 
+from common.enums import LiabilityType, HistorySource
+
 
 class Liability(models.Model):
     """
@@ -38,26 +40,17 @@ class Liability(models.Model):
         updated_at: Last update timestamp
         last_valued_at: When balance was last updated
     """
-    # Liability Type Choices
-    CREDIT_CARD = 'CREDIT_CARD'
-    MORTGAGE = 'MORTGAGE'
-    AUTO_LOAN = 'AUTO_LOAN'
-    STUDENT_LOAN = 'STUDENT_LOAN'
-    MEDICAL_LOAN = 'MEDICAL_LOAN'
-    PERSONAL_LOAN = 'PERSONAL_LOAN'
-    LINE_OF_CREDIT = 'LINE_OF_CREDIT'
-    OTHER = 'OTHER'
+    # Liability Type Choices (using centralized enums)
+    CREDIT_CARD = LiabilityType.CREDIT_CARD
+    MORTGAGE = LiabilityType.MORTGAGE
+    AUTO_LOAN = LiabilityType.AUTO_LOAN
+    STUDENT_LOAN = LiabilityType.STUDENT_LOAN
+    MEDICAL_LOAN = LiabilityType.MEDICAL_LOAN
+    PERSONAL_LOAN = LiabilityType.PERSONAL_LOAN
+    LINE_OF_CREDIT = LiabilityType.LINE_OF_CREDIT
+    OTHER = LiabilityType.OTHER
 
-    LIABILITY_TYPE_CHOICES = [
-        (CREDIT_CARD, 'Credit Card'),
-        (MORTGAGE, 'Mortgage/Home Loan'),
-        (AUTO_LOAN, 'Auto/Vehicle Loan'),
-        (STUDENT_LOAN, 'Student/Education Loan'),
-        (MEDICAL_LOAN, 'Medical Loan'),
-        (PERSONAL_LOAN, 'Personal Loan'),
-        (LINE_OF_CREDIT, 'Line of Credit'),
-        (OTHER, 'Other'),
-    ]
+    LIABILITY_TYPE_CHOICES = LiabilityType.choices
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -157,6 +150,8 @@ class Liability(models.Model):
         indexes = [
             models.Index(fields=['user', 'liability_type', 'is_active']),
             models.Index(fields=['user', 'is_active', '-updated_at']),
+            models.Index(fields=['user', 'creditor'], name='liability_user_creditor_idx'),
+            models.Index(fields=['currency', 'is_active'], name='liability_currency_active_idx'),
         ]
 
     def __str__(self):
@@ -197,21 +192,22 @@ class Liability(models.Model):
     def save(self, *args, **kwargs):
         """
         Override save to create history record on balance change.
+
+        To skip automatic history creation (e.g., when manually creating with custom source),
+        pass skip_history=True in kwargs.
         """
+        skip_history = kwargs.pop('skip_history', False)
+
         is_new = self.pk is None
         old_balance = None
 
         if not is_new:
-            try:
-                old_liability = Liability.objects.get(pk=self.pk)
-                old_balance = old_liability.balance
-            except Liability.DoesNotExist:
-                pass
+            old_balance = Liability.objects.filter(pk=self.pk).values_list('balance', flat=True).first()
 
         super().save(*args, **kwargs)
 
-        # Create history record if balance changed or new liability
-        if is_new or (old_balance and old_balance != self.balance):
+        # Create history record if balance changed or new liability (unless skipped)
+        if not skip_history and (is_new or (old_balance is not None and old_balance != self.balance)):
             LiabilityHistory.objects.create(
                 liability=self,
                 balance=self.balance,
@@ -231,15 +227,12 @@ class LiabilityHistory(models.Model):
         recorded_at: Timestamp of this record
         source: How this balance was recorded
     """
-    MANUAL = 'MANUAL'
-    STATEMENT_UPLOAD = 'STATEMENT_UPLOAD'
-    API_SYNC = 'API_SYNC'
+    # History Source Choices (using centralized enums)
+    MANUAL = HistorySource.MANUAL
+    STATEMENT_UPLOAD = HistorySource.STATEMENT_UPLOAD
+    API_SYNC = HistorySource.API_SYNC
 
-    SOURCE_CHOICES = [
-        (MANUAL, 'Manual Entry'),
-        (STATEMENT_UPLOAD, 'Statement Upload'),
-        (API_SYNC, 'API Sync'),
-    ]
+    SOURCE_CHOICES = HistorySource.choices
 
     liability = models.ForeignKey(
         Liability,
@@ -275,6 +268,7 @@ class LiabilityHistory(models.Model):
         ordering = ['-recorded_at']
         indexes = [
             models.Index(fields=['liability', '-recorded_at']),
+            models.Index(fields=['liability', 'source'], name='liability_history_source_idx'),
         ]
 
     def __str__(self):

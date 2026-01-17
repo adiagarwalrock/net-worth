@@ -40,6 +40,9 @@ class Currency(models.Model):
         verbose_name = "Currency"
         verbose_name_plural = "Currencies"
         ordering = ['code']
+        indexes = [
+            models.Index(fields=['is_active'], name='currency_is_active_idx'),
+        ]
 
     def __str__(self):
         return f"{self.code} - {self.name}"
@@ -91,7 +94,9 @@ class ExchangeRate(models.Model):
         ordering = ['-date', 'from_currency', 'to_currency']
         unique_together = ['from_currency', 'to_currency', 'date']
         indexes = [
+            models.Index(fields=['from_currency', 'to_currency', 'date']),
             models.Index(fields=['from_currency', 'to_currency', '-date']),
+            models.Index(fields=['to_currency', '-date'], name='exchange_rate_to_currency_idx'),
         ]
 
     def __str__(self):

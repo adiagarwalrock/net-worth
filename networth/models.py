@@ -90,6 +90,7 @@ class NetWorthSnapshot(models.Model):
         indexes = [
             models.Index(fields=['user', '-snapshot_date']),
             models.Index(fields=['household', '-snapshot_date']),
+            models.Index(fields=['snapshot_date'], name='networth_snapshot_date_idx'),
         ]
 
     def __str__(self):

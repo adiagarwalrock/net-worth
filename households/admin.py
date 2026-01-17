@@ -47,7 +47,7 @@ class HouseholdAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         """Filter queryset for non-superusers to only show households they're part of."""
-        qs = super().get_queryset(request)
+        qs = super().get_queryset(request).select_related('created_by').prefetch_related('members')
         if not request.user.is_superuser:
             qs = qs.filter(members__user=request.user).distinct()
         return qs
@@ -79,6 +79,10 @@ class HouseholdMemberAdmin(admin.ModelAdmin):
     ordering = ['-joined_at']
     readonly_fields = ['joined_at']
 
+    def get_queryset(self, request):
+        """Optimize queryset with select_related to avoid N+1 queries."""
+        return super().get_queryset(request).select_related('user', 'household')
+
     fieldsets = (
         ('Membership Information', {
             'fields': ('household', 'user', 'role', 'can_view_details'),
@@ -101,6 +105,10 @@ class HouseholdInvitationAdmin(admin.ModelAdmin):
     ordering = ['-created_at']
     readonly_fields = ['created_at', 'token']
     date_hierarchy = 'created_at'
+
+    def get_queryset(self, request):
+        """Optimize queryset with select_related to avoid N+1 queries."""
+        return super().get_queryset(request).select_related('household', 'invited_by')
 
     fieldsets = (
         ('Invitation Information', {

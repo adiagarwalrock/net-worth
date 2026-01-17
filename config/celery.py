@@ -23,10 +23,11 @@ app.conf.beat_schedule = {
         'task': 'currencies.tasks.update_exchange_rates',
         'schedule': crontab(hour=9, minute=0),  # Run daily at 9:00 AM UTC
     },
-    'create-daily-networth-snapshots': {
-        'task': 'networth.tasks.create_daily_snapshots',
-        'schedule': crontab(hour=0, minute=0),  # Run daily at midnight UTC
-    },
+    # TODO: Create networth.tasks.create_daily_snapshots task
+    # 'create-daily-networth-snapshots': {
+    #     'task': 'networth.tasks.create_daily_snapshots',
+    #     'schedule': crontab(hour=0, minute=0),  # Run daily at midnight UTC
+    # },
 }
 
 

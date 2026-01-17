@@ -39,6 +39,10 @@ class Household(models.Model):
         verbose_name = "Household"
         verbose_name_plural = "Households"
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=["created_by"], name="household_created_by_idx"),
+            models.Index(fields=["name"], name="household_name_idx"),
+        ]
 
     def __str__(self):
         return self.name
@@ -141,18 +145,38 @@ class HouseholdMember(models.Model):
         verbose_name_plural = "Household Members"
         unique_together = ['household', 'user']
         ordering = ['-joined_at']
+        indexes = [
+            models.Index(
+                fields=["household", "role"], name="household_member_role_idx"
+            ),
+            models.Index(
+                fields=["user", "role"], name="household_member_user_role_idx"
+            ),
+            models.Index(
+                fields=["household", "can_view_details"],
+                name="household_member_access_idx",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user.username} - {self.household.name} ({self.get_role_display()})"
 
     def clean(self):
         """
-        Validate that each household has at least one owner.
+        Validate household membership constraints:
+        - Each household must have at least one owner
+        - User cannot be added to same household twice (enforced by unique_together)
+        - Household creator must remain a member
         """
         super().clean()
 
-        # If removing the last owner, raise error
+        # Validate household exists (for new members)
+        if not self.household_id:
+            raise ValidationError("Household is required.")
+
+        # If changing role from OWNER to something else
         if self.role != self.OWNER and self.pk:
+            # Count other owners (excluding this member)
             owners_count = HouseholdMember.objects.filter(
                 household=self.household,
                 role=self.OWNER
@@ -163,12 +187,48 @@ class HouseholdMember(models.Model):
                     "Cannot change role: Household must have at least one owner."
                 )
 
+        # Prevent removing household creator
+        if self.pk and self.household.created_by == self.user:
+            # Check if we're trying to delete (would need to be caught in delete() instead)
+            # But we can check if role is being downgraded inappropriately
+            pass  # Creator can change their own role, but deletion should be prevented elsewhere
+
     def save(self, *args, **kwargs):
         """
         Override save to run validation.
         """
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """
+        Override delete to validate household constraints before deletion.
+
+        Prevents:
+        - Deleting the last owner of a household
+        - Deleting the household creator
+        """
+        from django.core.exceptions import ValidationError
+
+        # Prevent deleting household creator
+        if self.household.created_by == self.user:
+            raise ValidationError(
+                "Cannot remove household creator. Transfer ownership or delete the household instead."
+            )
+
+        # Prevent deleting the last owner
+        if self.role == self.OWNER:
+            owners_count = HouseholdMember.objects.filter(
+                household=self.household,
+                role=self.OWNER
+            ).exclude(pk=self.pk).count()
+
+            if owners_count == 0:
+                raise ValidationError(
+                    "Cannot remove the last owner. Assign another owner before removing this member."
+                )
+
+        super().delete(*args, **kwargs)
 
 
 class HouseholdInvitation(models.Model):
@@ -237,6 +297,10 @@ class HouseholdInvitation(models.Model):
         verbose_name = "Household Invitation"
         verbose_name_plural = "Household Invitations"
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=["household", "status"], name="hh_inv_status_idx"),
+            models.Index(fields=["email", "status"], name="hh_inv_email_status_idx"),
+        ]
 
     def __str__(self):
         return f"Invitation to {self.email} for {self.household.name}"

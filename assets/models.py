@@ -6,6 +6,8 @@ from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
 
+from common.enums import AssetType, HistorySource
+
 
 class Asset(models.Model):
     """
@@ -32,24 +34,16 @@ class Asset(models.Model):
         updated_at: Last update timestamp
         last_valued_at: When value was last updated
     """
-    # Asset Type Choices
-    CASH = 'CASH'
-    INVESTMENT = 'INVESTMENT'
-    REAL_ESTATE = 'REAL_ESTATE'
-    VEHICLE = 'VEHICLE'
-    PRECIOUS_METALS = 'PRECIOUS_METALS'
-    CRYPTOCURRENCY = 'CRYPTOCURRENCY'
-    OTHER = 'OTHER'
+    # Asset Type Choices (using centralized enums)
+    CASH = AssetType.CASH
+    INVESTMENT = AssetType.INVESTMENT
+    REAL_ESTATE = AssetType.REAL_ESTATE
+    VEHICLE = AssetType.VEHICLE
+    PRECIOUS_METALS = AssetType.PRECIOUS_METALS
+    CRYPTOCURRENCY = AssetType.CRYPTOCURRENCY
+    OTHER = AssetType.OTHER
 
-    ASSET_TYPE_CHOICES = [
-        (CASH, 'Cash & Bank Accounts'),
-        (INVESTMENT, 'Investment Portfolio'),
-        (REAL_ESTATE, 'Real Estate'),
-        (VEHICLE, 'Vehicle'),
-        (PRECIOUS_METALS, 'Precious Metals'),
-        (CRYPTOCURRENCY, 'Cryptocurrency'),
-        (OTHER, 'Other'),
-    ]
+    ASSET_TYPE_CHOICES = AssetType.choices
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -113,6 +107,7 @@ class Asset(models.Model):
         indexes = [
             models.Index(fields=['user', 'asset_type', 'is_active']),
             models.Index(fields=['user', 'is_active', '-updated_at']),
+            models.Index(fields=['currency', 'is_active'], name='asset_currency_active_idx'),
         ]
 
     def __str__(self):
@@ -141,21 +136,22 @@ class Asset(models.Model):
     def save(self, *args, **kwargs):
         """
         Override save to create history record on value change.
+
+        To skip automatic history creation (e.g., when manually creating with custom source),
+        pass skip_history=True in kwargs.
         """
+        skip_history = kwargs.pop('skip_history', False)
+
         is_new = self.pk is None
         old_value = None
 
         if not is_new:
-            try:
-                old_asset = Asset.objects.get(pk=self.pk)
-                old_value = old_asset.value
-            except Asset.DoesNotExist:
-                pass
+            old_value = Asset.objects.filter(pk=self.pk).values_list('value', flat=True).first()
 
         super().save(*args, **kwargs)
 
-        # Create history record if value changed or new asset
-        if is_new or (old_value and old_value != self.value):
+        # Create history record if value changed or new asset (unless skipped)
+        if not skip_history and (is_new or (old_value is not None and old_value != self.value)):
             AssetHistory.objects.create(
                 asset=self,
                 value=self.value,
@@ -175,15 +171,12 @@ class AssetHistory(models.Model):
         recorded_at: Timestamp of this record
         source: How this value was recorded
     """
-    MANUAL = 'MANUAL'
-    STATEMENT_UPLOAD = 'STATEMENT_UPLOAD'
-    API_SYNC = 'API_SYNC'
+    # History Source Choices (using centralized enums)
+    MANUAL = HistorySource.MANUAL
+    STATEMENT_UPLOAD = HistorySource.STATEMENT_UPLOAD
+    API_SYNC = HistorySource.API_SYNC
 
-    SOURCE_CHOICES = [
-        (MANUAL, 'Manual Entry'),
-        (STATEMENT_UPLOAD, 'Statement Upload'),
-        (API_SYNC, 'API Sync'),
-    ]
+    SOURCE_CHOICES = HistorySource.choices
 
     asset = models.ForeignKey(
         Asset,
@@ -219,6 +212,7 @@ class AssetHistory(models.Model):
         ordering = ['-recorded_at']
         indexes = [
             models.Index(fields=['asset', '-recorded_at']),
+            models.Index(fields=['asset', 'source'], name='asset_history_source_idx'),
         ]
 
     def __str__(self):

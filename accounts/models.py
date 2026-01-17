@@ -54,6 +54,14 @@ class User(AbstractUser):
         verbose_name = "User"
         verbose_name_plural = "Users"
         ordering = ['-date_joined']
+        indexes = [
+            models.Index(fields=["home_currency"], name="user_home_currency_idx"),
+            models.Index(fields=["email_verified"], name="user_email_verified_idx"),
+            models.Index(
+                fields=["home_currency", "email_verified"],
+                name="user_curr_email_idx",
+            ),
+        ]
 
     def __str__(self):
         return self.username
